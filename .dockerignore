@@ -1,5 +1,6 @@
 .git/
 output/
+.gradio/
 gpu_check.py
 services/pdf_to_docx_surya.py
 services/docx_surya_interface.py
