@@ -1,0 +1,7 @@
+__pycache__
+**__pycache__
+*.pyc
+services/pdf_to_docx_surya.py
+services/docx_surya_interface.py
+venv/
+gpu_check.py

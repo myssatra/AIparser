@@ -1,0 +1,8 @@
+gradio==5.25.2
+ocrmypdf==16.10.0
+PyPDF2==3.0.1
+python-docx==1.1.2
+Pillow==10.4.0
+surya-ocr==0.13.1
+torch==2.6.0
+torchvision==0.21.0

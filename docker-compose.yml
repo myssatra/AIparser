@@ -1,0 +1,12 @@
+   services:
+     aiparser:
+       build:
+         context: .
+         dockerfile: Dockerfile
+       image: aiparser:cpu
+       container_name: aiparser-cpu
+       ports:
+         - "7860:7860"
+       volumes:
+         - ./data:/app/data
+       restart: unless-stopped
