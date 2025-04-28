@@ -4,7 +4,7 @@ from interfaces.audio_interface import build_audio_interface
 from interfaces.pdf_interface import build_pdf_interface
 from interfaces.image_interface import build_image_interface
 from interfaces.docx_interface import build_docx_interface
-from interfaces.docx_surya_interface import build_docx_surya_interface
+# from interfaces.docx_surya_interface import build_docx_surya_interface
 
 css = """
 .gr-row { gap: 20px; }
@@ -26,11 +26,11 @@ with gr.Blocks(title="Система Распознавания: Файлы и �
         with gr.Tab("PDF в DOCX"):
             build_docx_interface()
         
-        with gr.Tab("PDF в DOCX (Surya Test)"):
-            build_docx_surya_interface()
+        # with gr.Tab("PDF в DOCX (Surya Test)"):
+        #     build_docx_surya_interface()
             
         # with gr.Tab("Транскрипция аудио"):
         #     build_audio_interface()
 
 if __name__ == "__main__":
-    app.launch()
+    app.launch(server_name="0.0.0.0", server_port=7860, share=False)
