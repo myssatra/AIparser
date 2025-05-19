@@ -1,3 +1,4 @@
+# services/audio_transcription.py
 import whisperx
 import torch
 from pyannote.audio import Pipeline
@@ -6,14 +7,15 @@ import os
 import tempfile
 import datetime
 import time
+import ffmpeg
+import pandas as pd
+import numpy as np
 from docx import Document
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-import pandas as pd
-import numpy as np
 
 # Включаем TF32 для производительности
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -36,6 +38,16 @@ def get_audio_duration(audio_path):
     with sf.SoundFile(audio_path) as f:
         duration = len(f) / f.samplerate
     return duration
+
+def extract_audio_from_video(video_path, temp_audio_path):
+    """Извлекает аудио из видео и сохраняет во временный файл с помощью FFmpeg."""
+    try:
+        stream = ffmpeg.input(video_path)
+        stream = ffmpeg.output(stream, temp_audio_path, format='wav', acodec='pcm_s16le')
+        ffmpeg.run(stream, overwrite_output=True)
+        return f"[Лог] Аудио извлечено из видео за {time.time() - start_time:.2f} сек"
+    except ffmpeg.Error as e:
+        return f"[Лог] Ошибка извлечения аудио: {str(e)}"
 
 def custom_assign_word_speakers(diarization, transcription_result):
     """Кастомная функция для сопоставления спикеров и транскрипции."""
@@ -69,22 +81,26 @@ def custom_assign_word_speakers(diarization, transcription_result):
                 seg['speaker'] = overlaps.loc[max_overlap, 'speaker']
     return result
 
-def transcribe_audio(audio_input, model_size="base", output_format="txt", use_diarization=True):
-    """Транскрибирует аудиофайл с диаризацией, сохраняет в указанном формате и возвращает текст."""
+def transcribe_audio(file_path, model_size="base", output_format="txt", use_diarization=True):
+    """Транскрибирует аудио или видео файл с диаризацией и возвращает текст и временный файл."""
+    global start_time
     start_time = time.time()
     yield f"[Лог] Начало обработки: {datetime.datetime.now()}"
 
-    if not audio_input:
-        yield "Ошибка: выберите аудиофайл."
+    if not file_path:
+        yield "Ошибка: выберите файл."
         return
 
-    if isinstance(audio_input, tuple):
-        sample_rate, audio_data = audio_input
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
-            temp_path = temp_file.name
-            sf.write(temp_path, audio_data, sample_rate)
-    else:
-        temp_path = audio_input
+    temp_path = file_path
+    is_video = file_path.lower().endswith(('.mp4', '.mov', '.mkv', '.avi'))
+    if is_video:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
+            temp_path = temp_audio.name
+            yield f"[Лог] Извлечение аудио из видео..."
+            log = extract_audio_from_video(file_path, temp_path)
+            yield log
+            if "Ошибка" in log:
+                return
 
     try:
         file_size = os.path.getsize(temp_path)
@@ -99,19 +115,23 @@ def transcribe_audio(audio_input, model_size="base", output_format="txt", use_di
         duration = get_audio_duration(temp_path)
         max_duration = 3 * 60 * 60
         if duration > max_duration:
-            yield f"Ошибка: Длительность аудио ({duration / 60:.2f} минут) превышает лимит 3 часов."
+            yield f"Ошибка: Длительность аудио/видео ({duration / 60:.2f} минут) превышает лимит 3 часов."
             return
 
-        # Определение устройства как строки
+        # Устройство как строка
         device = "cuda" if torch.cuda.is_available() else "cpu"
         if device == "cuda":
+            torch.cuda.set_device(0)
             yield f"[Лог] GPU устройство установлено: {torch.cuda.get_device_name(0)}"
-        yield f"[Лог] Используемое устройство: {device}, тип вычислений: {'float16' if device == 'cuda' else 'float32'}"
+        else:
+            yield f"[Лог] CUDA недоступна, используется CPU"
+        compute_type = "float16" if device == "cuda" else "float32"
+        yield f"[Лог] Используемое устройство: {device}, тип вычислений: {compute_type}"
 
-        # Загрузка модели Whisper с устройством как строкой
+        # Загрузка модели Whisper
         yield f"[Лог] Загрузка модели Whisper ({model_size})..."
         model_load_start = time.time()
-        model = whisperx.load_model(model_size, device, compute_type="float16" if device == "cuda" else "float32")
+        model = whisperx.load_model(model_size, device=device, compute_type=compute_type)
         yield f"[Лог] Модель Whisper загружена за {time.time() - model_load_start:.2f} сек"
 
         # Загрузка аудио
@@ -140,7 +160,7 @@ def transcribe_audio(audio_input, model_size="base", output_format="txt", use_di
                 if diarization_pipeline is None:
                     yield "[Лог] Не удалось загрузить модель диаризации. Выполняется только транскрипция."
                 else:
-                    diarization_pipeline.to(torch.device(device))
+                    diarization_pipeline.to(torch.device(device))  # Переводим на устройство
                     diarization = diarization_pipeline(temp_path)
                     yield f"[Лог] Результат диаризации: {diarization}"
                     if not diarization:
@@ -229,31 +249,37 @@ def transcribe_audio(audio_input, model_size="base", output_format="txt", use_di
 
         output_text = "".join(formatted_text)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = None
+        
+        # Сохранение во временный файл
         try:
             if output_format == "txt":
-                output_file = f"transcription_{timestamp}.txt"
-                with open(output_file, "w", encoding="utf-8") as f:
-                    f.write(output_text)
+                with tempfile.NamedTemporaryFile(suffix=f"_transcription_{timestamp}.txt", delete=False, mode='w', encoding='utf-8') as temp_file:
+                    temp_file.write(output_text)
+                    output_file = temp_file.name
             elif output_format == "docx":
-                output_file = f"transcription_{timestamp}.docx"
-                doc = Document()
-                doc.add_heading("Транскрипция аудиофайла", level=1)
-                for line in formatted_text:
-                    doc.add_paragraph(line)
-                doc.save(output_file)
+                with tempfile.NamedTemporaryFile(suffix=f"_transcription_{timestamp}.docx", delete=False) as temp_file:
+                    output_file = temp_file.name
+                    doc = Document()
+                    doc.add_heading("Транскрипция аудио/видео", level=1)
+                    for line in formatted_text:
+                        doc.add_paragraph(line)
+                    doc.save(output_file)
             elif output_format == "pdf":
-                output_file = f"transcription_{timestamp}.pdf"
-                doc = SimpleDocTemplate(output_file, pagesize=letter)
-                styles = getSampleStyleSheet()
-                styles['Heading1'].fontName = 'DejaVuSans'
-                styles['BodyText'].fontName = 'DejaVuSans'
-                story = [Paragraph("Транскрипция аудиофайла", styles['Heading1'])]
-                for line in formatted_text:
-                    story.append(Paragraph(line, styles['BodyText']))
-                doc.build(story)
+                with tempfile.NamedTemporaryFile(suffix=f"_transcription_{timestamp}.pdf", delete=False) as temp_file:
+                    output_file = temp_file.name
+                    doc = SimpleDocTemplate(output_file, pagesize=letter)
+                    styles = getSampleStyleSheet()
+                    styles['Heading1'].fontName = 'DejaVuSans'
+                    styles['BodyText'].fontName = 'DejaVuSans'
+                    story = [Paragraph("Транскрипция аудио/видео", styles['Heading1'])]
+                    for line in formatted_text:
+                        story.append(Paragraph(line, styles['BodyText']))
+                    doc.build(story)
+            else:
+                output_file = None
         except Exception as e:
-            yield f"[Лог] Ошибка сохранения файла: {str(e)}"
+            yield f"[Лог] Ошибка сохранения временного файла: {str(e)}"
+            output_file = None
 
         yield f"[Лог] Обработка завершена за {time.time() - start_time:.2f} сек"
         yield output_text, output_file
@@ -262,5 +288,5 @@ def transcribe_audio(audio_input, model_size="base", output_format="txt", use_di
         yield f"Ошибка: {str(e)}", None
 
     finally:
-        if isinstance(audio_input, tuple) and os.path.exists(temp_path):
+        if is_video and os.path.exists(temp_path):
             os.remove(temp_path)
