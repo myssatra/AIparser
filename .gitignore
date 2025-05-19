@@ -6,3 +6,5 @@ services/docx_surya_interface.py
 venv/
 gpu_check.py
 .gradio/
+заметки.md
+.env

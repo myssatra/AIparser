@@ -1,12 +1,25 @@
-   services:
-     aiparser:
-       build:
-         context: .
-         dockerfile: Dockerfile
-       image: aiparser:cpu
-       container_name: aiparser-cpu
-       ports:
-         - "7860:7860"
-       volumes:
-         - ./data:/app/data
-       restart: unless-stopped
+version: '3.8'
+services:
+  aiparser:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aiparser:gpu
+    container_name: aiparser-gpu
+    runtime: nvidia  # Включаем поддержку NVIDIA GPU
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - HF_TOKEN=${HF_TOKEN}
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./data:/AIparser/data  # Изменено с /app/data на /AIparser/data для соответствия WORKDIR
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

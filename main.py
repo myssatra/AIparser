@@ -29,8 +29,8 @@ with gr.Blocks(title="Система Распознавания: Файлы и �
         # with gr.Tab("PDF в DOCX (Surya Test)"):
         #     build_docx_surya_interface()
             
-        # with gr.Tab("Транскрипция аудио"):
-        #     build_audio_interface()
+        with gr.Tab("Транскрипция аудио"):
+            build_audio_interface()
 
 if __name__ == "__main__":
     app.launch(server_name="0.0.0.0", server_port=7860, share=False)
