@@ -40,7 +40,7 @@ def build_audio_interface():
         
         output_text = gr.Textbox(label="Результат транскрипции", lines=10)
         output_file = gr.File(label="Скачать транскрипцию")
-        log_text = gr.Textbox(label="Логи", lines=5, interactive=False)
+        # log_text = gr.Textbox(label="Логи", lines=5, interactive=False)
 
         def process_audio(file_path, model_size, output_format, use_diarization):
             if file_path is None:
@@ -64,7 +64,7 @@ def build_audio_interface():
         transcribe_button.click(
             fn=process_audio,
             inputs=[file_input, model_choice, output_format, use_diarization],
-            outputs=[output_text, output_file, log_text]
+            outputs=[output_text, output_file]
         )
 
 if __name__ == "__main__":
