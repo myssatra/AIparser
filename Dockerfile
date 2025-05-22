@@ -1,41 +1,44 @@
-# Базовый образ с CUDA 12.8 и cuDNN 9
+# Базовый образ с CUDA 12.8 и cuDNN
 FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04
 
-# Устанавливаем Python и зависимости
-RUN apt-get update && apt-get install -y \
+# Установка переменных окружения
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Установка необходимых системных пакетов и Python 3.11 из PPA
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
     python3.11-dev \
+    python3.11-venv \
     python3-pip \
     build-essential \
-    libpoppler-dev \
-    poppler-utils \
-    libtesseract-dev \
-    tesseract-ocr \
-    tesseract-ocr-rus \
-    tesseract-ocr-eng \
-    ghostscript \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем рабочую директорию
-WORKDIR /AIparser
+# Создание виртуального окружения
+RUN python3.11 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Копируем requirements.txt
-COPY requirements.txt .
+# Обновление pip в виртуальном окружении
+RUN pip install --upgrade pip
 
-RUN pip3 install --no-cache-dir torch==2.7.0+cu128 torchvision==0.22.0+cu128 torchaudio==2.7.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+# Создание рабочей директории
+WORKDIR /app
 
-# Устанавливаем зависимости Python
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Установка PyTorch и связанных библиотек
+RUN pip install \
+    torch==2.7.0+cu128 \
+    torchaudio==2.7.0+cu128 \
+    torchvision==0.22.0+cu128 \
+    --index-url https://download.pytorch.org/whl/cu128
 
-# Копируем остальной код
+# Копирование файлов проекта (если нужно)
 COPY . .
 
-# Открываем порт для Gradio
-EXPOSE 7860
+RUN pip install -r requirements.txt
 
-# Запускаем приложение
-CMD ["python3", "main.py"]
+# Команда по умолчанию
+CMD ["python", "main.py"]
